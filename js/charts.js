@@ -51,7 +51,6 @@ class PolarChart {
     this._drawTitle(cx, W, data);
     this._drawGrid(cx, cy, R);
     this._drawCdLabels(cx, cy, R, data.peakCandela);
-    if (data.beamAngle > 1) this._drawBeamAngle(cx, cy, R, data.beamAngle);
     this._drawCurves(cx, cy, R, data, opts.planeIndices ?? null);
     if (opts.coneAngles && opts.coneAngles.length) this._drawCones(cx, cy, R, data, opts.coneAngles);
     this._drawDivider(SIDE_PAD, W - SIDE_PAD, H - INFO_H);
@@ -247,27 +246,90 @@ class PolarChart {
     });
   }
 
-  // ── Horizontal cone circles ────────────────────────────────────────────────
+  // ── Horizontal cone curves ──────────────────────────────────────────────────
 
   _drawCones(cx, cy, R, data, coneAngles) {
     const ctx = this.ctx;
-    coneAngles.forEach((angle, i) => {
-      let sum = 0;
-      for (let h = 0; h < data.numHorizAngles; h++) {
-        sum += IESParser._interpCandela(data.vertAngles, data.candela[h], angle);
-      }
-      const r = (sum / data.numHorizAngles / data.peakCandela) * R;
-      if (r < 2) return;
+    const maxCd = data.peakCandela;
+
+    coneAngles.forEach((gamma, i) => {
+      const pts = this._buildConePoints(data, gamma, maxCd, R, cx, cy);
+      if (pts.length < 3) return;
+
+      const color = PLANE_COLORS[i % PLANE_COLORS.length];
       ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-      ctx.strokeStyle  = PLANE_COLORS[i % PLANE_COLORS.length];
-      ctx.lineWidth    = 1.5;
-      ctx.globalAlpha  = 0.75;
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j][0], pts[j][1]);
+      ctx.closePath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 1.5;
+      ctx.globalAlpha = 0.75;
       ctx.setLineDash([5, 3]);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.globalAlpha  = 1;
+      ctx.globalAlpha = 1;
     });
+  }
+
+  /**
+   * Build canvas points for a horizontal cone at vertical angle γ.
+   * Sweeps all horizontal angles (0–360°, respecting IES symmetry),
+   * plotting intensity as the radial distance and horizontal angle as
+   * the angular position on the polar chart.
+   */
+  _buildConePoints(data, gamma, maxCd, R, cx, cy) {
+    const step = 2; // degrees
+    const pts  = [];
+    for (let phi = 0; phi < 360; phi += step) {
+      const cd     = this._intensityAt(data, phi, gamma);
+      const r      = (cd / maxCd) * R;
+      const phiRad = phi * Math.PI / 180;
+      pts.push([cx + r * Math.sin(phiRad), cy + r * Math.cos(phiRad)]);
+    }
+    return pts;
+  }
+
+  /**
+   * Interpolate intensity I(φ, γ) from IES data, handling symmetry.
+   * φ = horizontal (C-plane) angle, γ = vertical angle.
+   */
+  _intensityAt(data, phi, gamma) {
+    const { horizAngles, vertAngles, candela, numHorizAngles } = data;
+
+    if (numHorizAngles === 1) {
+      return IESParser._interpCandela(vertAngles, candela[0], gamma);
+    }
+
+    // Normalise φ into 0–360
+    phi = ((phi % 360) + 360) % 360;
+
+    // Map φ into the range covered by the file's C-planes
+    const maxH = horizAngles[horizAngles.length - 1];
+    let lp; // lookup phi
+    if (maxH <= 90) {
+      // Quadrant symmetric: I(φ) = I(180−φ) = I(180+φ) = I(360−φ)
+      if      (phi <= 90)  lp = phi;
+      else if (phi <= 180) lp = 180 - phi;
+      else if (phi <= 270) lp = phi - 180;
+      else                 lp = 360 - phi;
+    } else if (maxH <= 180) {
+      // Bilateral symmetric: I(φ) = I(360−φ)
+      lp = phi <= 180 ? phi : 360 - phi;
+    } else {
+      lp = phi;
+    }
+
+    // Interpolate between the two bracketing horizontal planes
+    for (let h = 0; h < horizAngles.length - 1; h++) {
+      if (horizAngles[h] <= lp && lp <= horizAngles[h + 1]) {
+        const t   = (lp - horizAngles[h]) / (horizAngles[h + 1] - horizAngles[h]);
+        const cd1 = IESParser._interpCandela(vertAngles, candela[h], gamma);
+        const cd2 = IESParser._interpCandela(vertAngles, candela[h + 1], gamma);
+        return cd1 + t * (cd2 - cd1);
+      }
+    }
+    if (lp <= horizAngles[0]) return IESParser._interpCandela(vertAngles, candela[0], gamma);
+    return IESParser._interpCandela(vertAngles, candela[candela.length - 1], gamma);
   }
 
   /** Build canvas points in DECREASING angle order (maxAngle → 0°). */
@@ -386,23 +448,6 @@ class PolarChart {
       els.push(`<text x="${r2(cx + 4)}" y="${r2(y + 1)}" font-family="Arial,sans-serif" font-size="9" fill="${VISION_NAVY}" opacity="0.6" dominant-baseline="middle">${escSVG(val)}</text>`);
     });
 
-    // Beam angle annotation
-    if (data.beamAngle > 1) {
-      const halfRad = (data.beamAngle / 2) * Math.PI / 180;
-      const arcR    = R * 0.38;
-      els.push(svgLine(cx, cy, cx + R * Math.sin(halfRad), cy + R * Math.cos(halfRad), VISION_NAVY, 1, 0.55, '4,3'));
-      els.push(svgLine(cx, cy, cx - R * Math.sin(halfRad), cy + R * Math.cos(halfRad), VISION_NAVY, 1, 0.55, '4,3'));
-      const sa = Math.PI / 2 - halfRad, ea = Math.PI / 2 + halfRad;
-      const ax1 = cx + arcR * Math.cos(sa), ay1 = cy + arcR * Math.sin(sa);
-      const ax2 = cx + arcR * Math.cos(ea), ay2 = cy + arcR * Math.sin(ea);
-      els.push(`<path d="M ${r2(ax1)} ${r2(ay1)} A ${r2(arcR)} ${r2(arcR)} 0 0 1 ${r2(ax2)} ${r2(ay2)}" fill="none" stroke="${VISION_NAVY}" stroke-width="1" stroke-opacity="0.6" stroke-dasharray="3,3"/>`);
-      const label = data.beamAngle.toFixed(0) + '°';
-      const labelY = cy + arcR + 12;
-      const ltw    = label.length * 5.5 + 6;
-      els.push(`<rect x="${r2(cx - ltw / 2 - 3)}" y="${r2(labelY - 7)}" width="${r2(ltw + 6)}" height="13" fill="${VISION_SAND}"/>`);
-      els.push(`<text x="${r2(cx)}" y="${r2(labelY + 1)}" text-anchor="middle" font-family="Arial,sans-serif" font-size="9.5" fill="${VISION_NAVY}" opacity="0.7" dominant-baseline="middle">${escSVG(label)}</text>`);
-    }
-
     // Curves
     const idxArr = opts.planeIndices ?? data.candela.map((_, i) => i);
     idxArr.forEach((h, colorIdx) => {
@@ -428,16 +473,13 @@ class PolarChart {
       els.push(`<circle cx="${r2(nx)}" cy="${r2(ny)}" r="4" fill="${VISION_SAND}" stroke="${color}" stroke-width="2"/>`);
     });
 
-    // Cone circles
+    // Cone curves
     if (opts.coneAngles && opts.coneAngles.length) {
-      opts.coneAngles.forEach((angle, i) => {
-        let sum = 0;
-        for (let h = 0; h < data.numHorizAngles; h++) {
-          sum += IESParser._interpCandela(data.vertAngles, data.candela[h], angle);
-        }
-        const r = (sum / data.numHorizAngles / data.peakCandela) * R;
-        if (r < 2) return;
-        els.push(`<circle cx="${r2(cx)}" cy="${r2(cy)}" r="${r2(r)}" fill="none" stroke="${PLANE_COLORS[i % PLANE_COLORS.length]}" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.75"/>`);
+      opts.coneAngles.forEach((gamma, i) => {
+        const pts = this._buildConePoints(data, gamma, data.peakCandela, R, cx, cy);
+        if (pts.length < 3) return;
+        const d = pts.map(([x, y], j) => `${j === 0 ? 'M' : 'L'} ${r2(x)} ${r2(y)}`).join(' ') + ' Z';
+        els.push(`<path d="${d}" fill="none" stroke="${PLANE_COLORS[i % PLANE_COLORS.length]}" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.75"/>`);
       });
     }
 
