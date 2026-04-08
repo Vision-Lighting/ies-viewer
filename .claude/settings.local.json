@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'C:/Users/CalebHenderson/OneDrive - Vision Lighting Supplies Pty Ltd' -type f -name *.pdf)",
+      "Bash(find \"C:/Users/CalebHenderson/OneDrive - Vision Lighting Supplies Pty Ltd/01. Operations & Management\" -type f \\\\\\( -iname \"*brand*\" -o -iname \"*style*\" -o -iname \"*guide*\" -o -iname \"*logo*\" -o -iname \"*colour*\" -o -iname \"*color*\" \\\\\\))",
+      "Bash(wc -l \"C:/Users/CalebHenderson/OneDrive - Vision Lighting Supplies Pty Ltd/01. Operations & Management/AI/ies/css/styles.css\")",
+      "Bash(gh auth:*)"
+    ]
+  }
+}

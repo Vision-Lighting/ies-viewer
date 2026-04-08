@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IES Analyzer — Vision Lighting</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <div class="sidebar-header">
+      <div class="logo">
+        <img src="assets/logo.png" alt="Vision Lighting">
+      </div>
+      <div class="logo-sub">Photometric Analyzer</div>
+    </div>
+
+    <div id="dropZone" class="drop-zone">
+      <div class="drop-icon">⬆</div>
+      <div class="drop-title">Drop IES files here</div>
+      <div class="drop-sub">or</div>
+      <button id="uploadBtn" class="btn btn-primary btn-sm">Browse Files</button>
+      <input type="file" id="fileInput" accept=".ies,.ldt" multiple hidden>
+    </div>
+
+    <div class="sidebar-section-header">
+      Loaded Files
+      <span id="fileCount" class="badge">0</span>
+    </div>
+
+    <div id="fileList" class="file-list">
+      <p class="sidebar-empty">No files loaded</p>
+    </div>
+
+  </aside>
+
+  <!-- ── Main Panel ────────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Empty / drop state -->
+    <div id="emptyState" class="empty-state">
+      <div class="empty-drop-ring" id="emptyDropRing">
+        <div class="empty-icon">⬆</div>
+        <h2>Drop .ies files here</h2>
+        <p>or</p>
+        <button id="uploadBtn2" class="btn btn-primary">Browse Files</button>
+        <p class="empty-hint">Supports IESNA LM-63 (all versions) &nbsp;·&nbsp; Type A / B / C</p>
+      </div>
+    </div>
+
+    <!-- File display -->
+    <div id="fileDisplay" style="display:none" class="file-display">
+
+      <!-- File Header -->
+      <div class="file-header">
+        <div class="file-header-left">
+          <h2 id="dispFilename" class="file-title">—</h2>
+          <div class="file-badges">
+            <span id="dispFormat"    class="badge badge-blue">LM-63</span>
+            <span id="dispPhotoType" class="badge badge-purple">Type C</span>
+            <span id="dispSymmetry"  class="badge badge-green">Symmetric</span>
+          </div>
+        </div>
+        <div class="file-header-right">
+          <button id="exportBtn" class="btn btn-outline btn-sm">⬇ Export Metrics</button>
+        </div>
+      </div>
+
+      <div id="banners"></div>
+
+      <!-- Tabs -->
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="compare">📋 Compare All</button>
+        <button class="tab-btn"        data-tab="detail">📊 Detail</button>
+      </nav>
+
+      <!-- ══ Compare All (default) ════════════════════════════════ -->
+      <div id="tab-compare" class="tab-pane active">
+
+        <div class="compare-toolbar">
+          <span class="compare-info" id="compareInfo">0 files loaded</span>
+          <div class="toolbar-right">
+            <div class="transform-wrap" id="transformWrap">
+              <button class="btn btn-outline btn-sm" id="transformBtn">⚙ Transform ▾</button>
+              <div class="transform-menu" id="transformMenu" hidden>
+                <div class="transform-item transform-disabled">Edit Product Data <span class="coming-soon">(coming soon)</span></div>
+                <div class="transform-item transform-disabled">Scale Original <span class="coming-soon">(coming soon)</span></div>
+                <div class="transform-item transform-disabled">Scale as Copy <span class="coming-soon">(coming soon)</span></div>
+                <div class="transform-divider"></div>
+                <div class="transform-item transform-disabled">Symmetrise (single plane) <span class="coming-soon">(coming soon)</span></div>
+                <div class="transform-item transform-disabled">Symmetrise (2 planes) <span class="coming-soon">(coming soon)</span></div>
+                <div class="transform-item transform-disabled">Symmetrise (rotational) <span class="coming-soon">(coming soon)</span></div>
+              </div>
+            </div>
+            <button class="btn btn-outline btn-sm" id="exportCsvBtn">⬇ Export CSV</button>
+          </div>
+        </div>
+
+        <div class="compare-wrap">
+          <table class="compare-table" id="compareTable">
+            <thead>
+              <tr>
+                <th class="th-check"><input type="checkbox" id="selectAllCb" title="Select all"></th>
+                <th data-col="filename">File</th>
+                <th data-col="manufac">Manufacturer</th>
+                <th data-col="totalLumens">Lumens (lm)</th>
+                <th data-col="inputWatts">Power (W)</th>
+                <th data-col="efficacy">Efficacy (lm/W)</th>
+                <th data-col="peakCandela">Peak cd</th>
+                <th data-col="nadirCandela">Nadir cd</th>
+                <th data-col="beamAngle">Beam (°)</th>
+                <th data-col="fieldAngle">Field (°)</th>
+                <th data-col="percentDownward">Down %</th>
+                <th data-col="cieClass">CIE Class</th>
+              </tr>
+            </thead>
+            <tbody id="compareBody"></tbody>
+          </table>
+        </div>
+
+      </div>
+
+      <!-- ══ Detail (metrics + charts + info + zonal) ═════════════ -->
+      <div id="tab-detail" class="tab-pane">
+
+        <!-- Key metrics row -->
+        <div class="metrics-grid">
+          <div class="metric-card accent">
+            <div class="metric-label">Total Lumens</div>
+            <div class="metric-value" id="mLumens">—</div>
+            <div class="metric-unit">lm</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Input Power</div>
+            <div class="metric-value" id="mWatts">—</div>
+            <div class="metric-unit">W</div>
+          </div>
+          <div class="metric-card accent-green">
+            <div class="metric-label">Efficacy</div>
+            <div class="metric-value" id="mEfficacy">—</div>
+            <div class="metric-unit">lm/W</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Peak Intensity</div>
+            <div class="metric-value" id="mPeakCd">—</div>
+            <div class="metric-unit">cd</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Nadir Intensity</div>
+            <div class="metric-value" id="mNadirCd">—</div>
+            <div class="metric-unit">cd</div>
+          </div>
+          <div class="metric-card accent-sand">
+            <div class="metric-label">Beam Angle (50%)</div>
+            <div class="metric-value" id="mBeam">—</div>
+            <div class="metric-unit">°</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Field Angle (10%)</div>
+            <div class="metric-value" id="mField">—</div>
+            <div class="metric-unit">°</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Downward Flux</div>
+            <div class="metric-value" id="mDown">—</div>
+            <div class="metric-unit">%</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Upward Flux</div>
+            <div class="metric-value" id="mUp">—</div>
+            <div class="metric-unit">%</div>
+          </div>
+        </div>
+
+        <!-- CIE + reported lumens -->
+        <div id="reportedRow" class="info-row" style="display:none">
+          <span class="info-label">Reported Lumens (file)</span>
+          <span><strong id="mReported">—</strong> lm <span id="mLumenDiff" class="dim"></span></span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">CIE Luminaire Classification</span>
+          <span id="cieClass" class="badge badge-blue">—</span>
+        </div>
+
+        <!-- File info + Polar side-by-side -->
+        <div class="detail-charts">
+          <div class="meta-card">
+            <div class="detail-section-label">File Information</div>
+            <table class="meta-table"><tbody id="metaBody"></tbody></table>
+          </div>
+          <div class="chart-card polar-card">
+            <div class="chart-card-header">
+              <span class="chart-title">Polar Intensity Distribution</span>
+              <div id="chartLegend" class="chart-legend"></div>
+              <button id="downloadSvgBtn" class="btn btn-outline btn-sm">↓ SVG</button>
+            </div>
+            <div class="polar-mode-bar">
+              <label class="polar-radio-label"><input type="radio" name="polarMode" value="0-90" checked> 0° / 90°</label>
+              <label class="polar-radio-label"><input type="radio" name="polarMode" value="maxmax"> Max / Max Cone</label>
+              <label class="polar-radio-label"><input type="radio" name="polarMode" value="other"> Other</label>
+            </div>
+            <div class="polar-body">
+              <div class="polar-wrap">
+                <canvas id="polarCanvas"></canvas>
+              </div>
+              <div id="polarOtherPanel" class="polar-other-panel" hidden>
+                <div class="other-group">
+                  <div class="other-group-title">Vert. Plane</div>
+                  <div id="vertPlaneRows" class="other-rows"></div>
+                </div>
+                <div class="other-group">
+                  <div class="other-group-title">Horiz. Cone</div>
+                  <div id="horizConeRows" class="other-rows"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div><!-- /fileDisplay -->
+  </main>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="js/ies-parser.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
