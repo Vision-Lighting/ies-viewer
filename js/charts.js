@@ -275,7 +275,8 @@ class PolarChart {
    * Build canvas points for a horizontal cone at vertical angle γ.
    * Sweeps all horizontal angles (0–360°, respecting IES symmetry),
    * plotting intensity as the radial distance and horizontal angle as
-   * the angular position on the polar chart.
+   * the angular position.  Uses plan-view (top-down) projection:
+   *   C0° = top, C90° = right, C180° = bottom, C270° = left.
    */
   _buildConePoints(data, gamma, maxCd, R, cx, cy) {
     const step = 2; // degrees
@@ -284,7 +285,7 @@ class PolarChart {
       const cd     = this._intensityAt(data, phi, gamma);
       const r      = (cd / maxCd) * R;
       const phiRad = phi * Math.PI / 180;
-      pts.push([cx + r * Math.sin(phiRad), cy + r * Math.cos(phiRad)]);
+      pts.push([cx + r * Math.cos(phiRad), cy + r * Math.sin(phiRad)]);
     }
     return pts;
   }

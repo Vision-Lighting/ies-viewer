@@ -41,6 +41,7 @@ const IESParser = {
       reportedLumens: null,
       efficacy: 0,
       peakCandela: 0,
+      peakVertAngle: 0,
       nadirCandela: 0,
       beamAngle: 0,
       fieldAngle: 0,
@@ -207,11 +208,15 @@ const IESParser = {
   _calculateMetrics(data) {
     if (!data.candela.length || !data.vertAngles.length) return;
 
-    // Peak candela
+    // Peak candela and peak vertical angle
     data.peakCandela = 0;
-    for (const plane of data.candela) {
-      for (const v of plane) {
-        if (v > data.peakCandela) data.peakCandela = v;
+    data.peakVertAngle = 0;
+    for (let h = 0; h < data.candela.length; h++) {
+      for (let v = 0; v < data.candela[h].length; v++) {
+        if (data.candela[h][v] > data.peakCandela) {
+          data.peakCandela = data.candela[h][v];
+          data.peakVertAngle = data.vertAngles[v];
+        }
       }
     }
 

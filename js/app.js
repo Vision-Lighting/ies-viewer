@@ -174,7 +174,6 @@ const App = {
     this._buildOtherPanel(data);
     this._updateCharts(data);
     this._updateMetadata(data);
-    this._updateLegend(data);
   },
 
   _showEmpty() {
@@ -382,23 +381,6 @@ const App = {
     });
   },
 
-  // ─── Legend ─────────────────────────────────────────────────────────────────
-
-  _updateLegend(data) {
-    const container = document.getElementById('chartLegend');
-    container.innerHTML = '';
-    data.horizAngles.forEach((angle, h) => {
-      const color = PLANE_COLORS[h % PLANE_COLORS.length];
-      const item  = document.createElement('div');
-      item.className = 'legend-item';
-      item.innerHTML = `
-        <span class="legend-swatch" style="background:${color}"></span>
-        C${angle}° / C${(angle + 180) % 360}°
-      `;
-      container.appendChild(item);
-    });
-  },
-
   // ─── Metadata ────────────────────────────────────────────────────────────────
 
   _updateMetadata(data) {
@@ -478,7 +460,7 @@ const App = {
       });
       return {
         planeIndices: [peakIdx],
-        coneAngles:   data.beamAngle > 0 ? [data.beamAngle / 2] : []
+        coneAngles:   data.peakVertAngle > 0 ? [data.peakVertAngle] : []
       };
     }
 
@@ -531,14 +513,14 @@ const App = {
     this.customPlaneIndices = [peakIdx];
 
     // Build cone options
-    const maxV    = data.vertAngles[data.vertAngles.length - 1];
-    const bHalf   = data.beamAngle / 2;
+    const maxV     = data.vertAngles[data.vertAngles.length - 1];
+    const peakVert = data.peakVertAngle;
     const coneOpts = [];
-    if (data.beamAngle > 0) {
-      coneOpts.push({ angle: bHalf, label: `Max &nbsp;<span class="other-angle-dim">${bHalf.toFixed(0)}°</span>` });
+    if (peakVert > 0) {
+      coneOpts.push({ angle: peakVert, label: `Max &nbsp;<span class="other-angle-dim">${peakVert.toFixed(0)}°</span>` });
     }
     [15, 30, 45, 60, 75, 90].forEach(a => {
-      if (a <= maxV && Math.abs(a - bHalf) > 3) coneOpts.push({ angle: a, label: `${a}°` });
+      if (a <= maxV && Math.abs(a - peakVert) > 3) coneOpts.push({ angle: a, label: `${a}°` });
     });
 
     coneContainer.innerHTML = coneOpts.map(c => `
@@ -645,15 +627,46 @@ const App = {
         });
     });
 
-    // CSV export of all files
+    // SVG diagram export → zip file
+    document.getElementById('exportDiagramsBtn').addEventListener('click', async () => {
+      const targets = this._exportTargets();
+      if (!targets.length) { this._toast('No files to export', 'warn'); return; }
+
+      const zip = new JSZip();
+      targets.forEach(d => {
+        let peakIdx = 0, peakCd = 0;
+        d.candela.forEach((plane, h) => {
+          const m = Math.max(...plane);
+          if (m > peakCd) { peakCd = m; peakIdx = h; }
+        });
+        const opts = {
+          planeIndices: [peakIdx],
+          coneAngles:   d.peakVertAngle > 0 ? [d.peakVertAngle] : []
+        };
+        const svg = this.polarChart.exportSVG(d, opts);
+        zip.file(d.filename.replace(/\.ies$/i, '') + '-polar.svg', svg);
+      });
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = 'ies-diagrams.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+      this._toast(`Exported ${targets.length} diagram${targets.length !== 1 ? 's' : ''} as zip`, 'ok');
+    });
+
+    // CSV export
     document.getElementById('exportCsvBtn').addEventListener('click', () => {
-      if (!this.files.length) { this._toast('No files to export', 'warn'); return; }
+      const targets = this._exportTargets();
+      if (!targets.length) { this._toast('No files to export', 'warn'); return; }
 
       const headers = ['File','Manufacturer','Catalog No.','Lumens (lm)','Power (W)',
         'Efficacy (lm/W)','Peak cd','Nadir cd','Beam Angle (°)','Field Angle (°)',
         'Down %','Up %','CIE Class','C-Planes','Vert Angles'];
 
-      const rows = this.files.map(d => [
+      const rows = targets.map(d => [
         d.filename,
         d.keywords.MANUFAC  || '',
         d.keywords.LUMCAT   || '',
@@ -679,8 +692,18 @@ const App = {
       a.download = 'ies-comparison.csv';
       a.click();
       URL.revokeObjectURL(url);
-      this._toast('CSV exported', 'ok');
+      this._toast(`Exported ${targets.length} row${targets.length !== 1 ? 's' : ''} as CSV`, 'ok');
     });
+  },
+
+  // ─── Export helpers ──────────────────────────────────────────────────────────
+
+  /** Returns the files to export: selected ones, or all if none are checked. */
+  _exportTargets() {
+    if (this.selectedFiles.size > 0) {
+      return this.files.filter(f => this.selectedFiles.has(f.filename));
+    }
+    return [...this.files];
   },
 
   // ─── Toast ───────────────────────────────────────────────────────────────────
