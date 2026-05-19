@@ -545,7 +545,7 @@ html, body {
 .polar-wrap canvas {
   width: 100%;
   max-width: 420px;
-  aspect-ratio: 1;
+  aspect-ratio: 420 / 260;
   border-radius: var(--radius);
   background: #fff;
 }
@@ -578,13 +578,8 @@ html, body {
 
 /* Checkbox column */
 .th-check, .td-check {
-  width: 36px;
-  min-width: 36px;
-  text-align: center;
-  padding: 0 6px !important;
+  display: none;
 }
-
-.th-check { cursor: default; }
 
 .row-cb, #selectAllCb {
   cursor: pointer;

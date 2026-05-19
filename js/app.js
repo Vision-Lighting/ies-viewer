@@ -634,16 +634,7 @@ const App = {
 
       const zip = new JSZip();
       targets.forEach(d => {
-        let peakIdx = 0, peakCd = 0;
-        d.candela.forEach((plane, h) => {
-          const m = Math.max(...plane);
-          if (m > peakCd) { peakCd = m; peakIdx = h; }
-        });
-        const opts = {
-          planeIndices: [peakIdx],
-          coneAngles:   d.peakVertAngle > 0 ? [d.peakVertAngle] : []
-        };
-        const svg = this.polarChart.exportSVG(d, opts);
+        const svg = this.polarChart.exportSVG(d, this._getPolarOpts(d));
         zip.file(d.filename.replace(/\.ies$/i, '') + '-polar.svg', svg);
       });
 

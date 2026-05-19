@@ -1,6 +1,6 @@
 'use strict';
 
-const PLANE_COLORS = ['#3D54E5', '#E03434', '#16A34A', '#D97706', '#7C3AED', '#0891B2'];
+const PLANE_COLORS = ['#3D54E5', '#1b1671', '#16A34A', '#D97706', '#7C3AED', '#0891B2'];
 const VISION_SAND  = '#fee1a7';
 const VISION_NAVY  = '#1b1671';
 
@@ -32,86 +32,57 @@ class PolarChart {
   }
 
   draw(data, opts = {}) {
-    const { ctx, W, H } = this;
+    const { ctx, W } = this;
+    // Scale all coordinates from the 420×260 canonical layout
+    const s       = W / 420;
+    const cx      = Math.round(120 * s);
+    const cy      = Math.round(122 * s);
+    const R       = Math.round(98 * s);
+    const PANEL_X = Math.round(252 * s);
 
-    const TITLE_H  = 52;
-    const INFO_H   = 50;
-    const SIDE_PAD = 36;
-    const chartH   = H - TITLE_H - INFO_H;
-    const R        = Math.min((W - 2 * SIDE_PAD) / 2, chartH / 2) * 0.92;
-    const cx       = W / 2;
-    const cy       = TITLE_H + chartH / 2;
-
-    // Sand background
-    ctx.fillStyle = VISION_SAND;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, this.H);
 
     if (!data || !data.peakCandela) return;
 
-    this._drawTitle(cx, W, data);
     this._drawGrid(cx, cy, R);
+    this._drawAngleLabels(cx, cy, R, s);
     this._drawCdLabels(cx, cy, R, data.peakCandela);
     this._drawCurves(cx, cy, R, data, opts.planeIndices ?? null);
     if (opts.coneAngles && opts.coneAngles.length) this._drawCones(cx, cy, R, data, opts.coneAngles);
-    this._drawDivider(SIDE_PAD, W - SIDE_PAD, H - INFO_H);
-    this._drawInfoStrip(SIDE_PAD, W - SIDE_PAD, H - INFO_H + 7, data);
+    this._drawLegend(cx, cy, R, data, opts.planeIndices ?? null, s);
+    this._drawStatsPanel(PANEL_X, W, this.H, data, s);
   }
 
-  // ── Title + subtitle + top divider ────────────────────────────────────────
-
-  _drawTitle(cx, W, data) {
-    const ctx = this.ctx;
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'top';
-
-    ctx.fillStyle = VISION_NAVY;
-    ctx.font      = 'bold 13px Arial, sans-serif';
-    ctx.fillText('Polar Intensity Distribution', cx, 10);
-
-    ctx.globalAlpha = 0.7;
-    ctx.font        = '9.5px Arial, sans-serif';
-    const kw  = data.keywords;
-    const sub = [data.filename.replace(/\.ies$/i, ''), kw.LUMINAIRE, kw.LAMP]
-      .filter(Boolean).slice(0, 2).join(' · ');
-    ctx.fillText(sub, cx, 27);
-    ctx.globalAlpha = 1;
-
-    this._drawDivider(36, W - 36, 44);
-  }
-
-  // ── Concentric rings + radial lines every 10° ─────────────────────────────
+  // ── Grid: rings at 25/50/75/100% + radial lines every 15° ────────────────
 
   _drawGrid(cx, cy, R) {
     const ctx = this.ctx;
 
-    // Rings at 25 / 50 / 75 / 100 %
     [0.25, 0.5, 0.75, 1.0].forEach(ratio => {
       ctx.beginPath();
       ctx.arc(cx, cy, R * ratio, 0, 2 * Math.PI);
       ctx.strokeStyle = VISION_NAVY;
-      ctx.globalAlpha = 0.6;
-      ctx.lineWidth   = 0.6;
+      ctx.globalAlpha = ratio === 1.0 ? 0.4 : 0.18;
+      ctx.lineWidth   = ratio === 1.0 ? 0.9 : 0.6;
       ctx.stroke();
       ctx.globalAlpha = 1;
     });
 
-    // Radial lines every 10°
-    // Each angle produces TWO diameters (the ±θ pair), matching the reference SVG
-    ctx.lineWidth = 0.5;
-    for (let deg = 0; deg <= 90; deg += 10) {
-      const rad = deg * Math.PI / 180;
-      const sx  = Math.sin(rad) * R;
-      const sy  = Math.cos(rad) * R;
+    for (let deg = 0; deg <= 90; deg += 15) {
+      const rad  = deg * Math.PI / 180;
+      const sx   = Math.sin(rad) * R;
+      const sy   = Math.cos(rad) * R;
+      const isAx = (deg === 0 || deg === 90);
       ctx.strokeStyle = VISION_NAVY;
-      ctx.globalAlpha = (deg === 0 || deg === 90) ? 0.45 : 0.30;
+      ctx.globalAlpha = isAx ? 0.35 : 0.13;
+      ctx.lineWidth   = isAx ? 0.7 : 0.5;
 
-      // θ line: lower-right ↔ upper-left
       ctx.beginPath();
       ctx.moveTo(cx + sx, cy + sy);
       ctx.lineTo(cx - sx, cy - sy);
       ctx.stroke();
 
-      // −θ mirror: lower-left ↔ upper-right
       if (deg > 0 && deg < 90) {
         ctx.beginPath();
         ctx.moveTo(cx - sx, cy + sy);
@@ -122,88 +93,57 @@ class PolarChart {
     ctx.globalAlpha = 1;
   }
 
-  // ── Candela labels on the vertical axis (above centre) ────────────────────
+  // ── Angle labels at grid edges ─────────────────────────────────────────────
+
+  _drawAngleLabels(cx, cy, R, s) {
+    const ctx = this.ctx;
+    const fs  = Math.max(7, Math.round(8.5 * s));
+    ctx.fillStyle   = VISION_NAVY;
+    ctx.globalAlpha = 0.55;
+    ctx.font        = `bold ${fs}px 'Public Sans', Arial, sans-serif`;
+
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('90°', cx + R + Math.round(6 * s), cy);
+
+    ctx.textAlign = 'right';
+    ctx.fillText('90°', cx - R - Math.round(6 * s), cy);
+
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('180°', cx, cy - R - Math.round(3 * s));
+
+    ctx.globalAlpha = 1;
+  }
+
+  // ── Candela labels on vertical axis (white knockout) ──────────────────────
 
   _drawCdLabels(cx, cy, R, maxCd) {
     const ctx = this.ctx;
-    ctx.font         = '9px Arial, sans-serif';
-    ctx.textAlign    = 'left';
-    ctx.textBaseline = 'middle';
+    ctx.font = "bold 9.5px 'Public Sans', Arial, sans-serif";
 
     [0.25, 0.5, 0.75, 1.0].forEach(ratio => {
-      const y   = cy - R * ratio;           // above centre = toward zenith
+      const y   = cy - R * ratio;
       const val = Math.round(maxCd * ratio).toLocaleString();
-      const tw  = val.length * 5.5 + 6;
+      const tw  = ctx.measureText(val).width + 8;
 
-      // Knockout rectangle so the label reads over grid lines
-      ctx.fillStyle = VISION_SAND;
-      ctx.fillRect(cx + 2, y - 7, tw, 13);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(cx + 2, y - 7, tw, 14);
 
-      ctx.fillStyle   = VISION_NAVY;
-      ctx.globalAlpha = 0.6;
+      ctx.fillStyle    = VISION_NAVY;
+      ctx.globalAlpha  = 0.55;
+      ctx.textAlign    = 'left';
+      ctx.textBaseline = 'middle';
       ctx.fillText(val, cx + 4, y);
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha  = 1;
     });
-  }
-
-  // ── Beam-angle annotation: dashed lines + arc + label ─────────────────────
-
-  _drawBeamAngle(cx, cy, R, beamAngle) {
-    const ctx     = this.ctx;
-    const halfRad = (beamAngle / 2) * Math.PI / 180;
-    const arcR    = R * 0.38;
-
-    ctx.strokeStyle = VISION_NAVY;
-    ctx.lineWidth   = 1;
-    ctx.globalAlpha = 0.55;
-    ctx.setLineDash([4, 3]);
-
-    // Dashed lines from centre to each half-beam edge
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + R * Math.sin(halfRad), cy + R * Math.cos(halfRad));
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx - R * Math.sin(halfRad), cy + R * Math.cos(halfRad));
-    ctx.stroke();
-
-    // Dashed arc through nadir side
-    ctx.setLineDash([3, 3]);
-    ctx.globalAlpha = 0.6;
-    ctx.beginPath();
-    // canvas arc: 0 = right, clockwise; π/2 = down (nadir direction)
-    ctx.arc(cx, cy, arcR, Math.PI / 2 - halfRad, Math.PI / 2 + halfRad, false);
-    ctx.stroke();
-
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
-
-    // Label
-    const label  = beamAngle.toFixed(0) + '°';
-    const labelY = cy + arcR + 12;
-    const tw     = ctx.measureText(label).width;
-
-    ctx.fillStyle = VISION_SAND;
-    ctx.fillRect(cx - tw / 2 - 3, labelY - 7, tw + 6, 13);
-
-    ctx.fillStyle    = VISION_NAVY;
-    ctx.globalAlpha  = 0.7;
-    ctx.font         = '9.5px Arial, sans-serif';
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, cx, labelY);
-    ctx.globalAlpha  = 1;
   }
 
   // ── Intensity curves ───────────────────────────────────────────────────────
 
   _drawCurves(cx, cy, R, data, planeIndices) {
     const maxCd  = data.peakCandela;
-    const idxArr = (planeIndices != null)
-      ? planeIndices
-      : data.candela.map((_, i) => i);
+    const idxArr = planeIndices != null ? planeIndices : data.candela.map((_, i) => i);
 
     idxArr.forEach((h, colorIdx) => {
       const plane    = data.candela[h];
@@ -212,44 +152,38 @@ class PolarChart {
       const oppPlane = oppIdx >= 0 ? data.candela[oppIdx] : plane;
       const color    = PLANE_COLORS[colorIdx % PLANE_COLORS.length];
 
-      // Points in DECREASING angle order so the polyline runs from
-      // near-centre (high angle / low cd) → nadir (0° / max cd)
       const rightPts = this._buildPts(data.vertAngles, plane,    maxCd, R, cx, cy, +1);
       const leftPts  = this._buildPts(data.vertAngles, oppPlane, maxCd, R, cx, cy, -1);
+      const leftInc  = [...leftPts].reverse();
 
-      // Filled polygon: centre → right (dec order) → left (inc order) → close
-      const leftInc = [...leftPts].reverse();   // inc = 0° → maxAngle on left
       this.ctx.beginPath();
       this.ctx.moveTo(cx, cy);
       rightPts.forEach(([x, y]) => this.ctx.lineTo(x, y));
       leftInc.slice(1).forEach(([x, y]) => this.ctx.lineTo(x, y));
       this.ctx.closePath();
       this.ctx.fillStyle   = color;
-      this.ctx.globalAlpha = 0.10;
+      this.ctx.globalAlpha = 0.09;
       this.ctx.fill();
       this.ctx.globalAlpha = 1;
 
-      // Right polyline
       this._polyline(rightPts, cx, cy, color);
-      // Left polyline
       this._polyline(leftPts,  cx, cy, color);
 
-      // Nadir dot at last point (0°)
       const [nx, ny] = rightPts[rightPts.length - 1];
       this.ctx.beginPath();
-      this.ctx.arc(nx, ny, 4, 0, 2 * Math.PI);
-      this.ctx.fillStyle   = VISION_SAND;
+      this.ctx.arc(nx, ny, 3.5, 0, 2 * Math.PI);
+      this.ctx.fillStyle   = '#ffffff';
       this.ctx.fill();
       this.ctx.strokeStyle = color;
-      this.ctx.lineWidth   = 2;
+      this.ctx.lineWidth   = 1.75;
       this.ctx.stroke();
     });
   }
 
-  // ── Horizontal cone curves ──────────────────────────────────────────────────
+  // ── Horizontal cone curves (maxmax mode) ──────────────────────────────────
 
   _drawCones(cx, cy, R, data, coneAngles) {
-    const ctx = this.ctx;
+    const ctx   = this.ctx;
     const maxCd = data.peakCandela;
 
     coneAngles.forEach((gamma, i) => {
@@ -271,15 +205,113 @@ class PolarChart {
     });
   }
 
-  /**
-   * Build canvas points for a horizontal cone at vertical angle γ.
-   * Sweeps all horizontal angles (0–360°, respecting IES symmetry),
-   * plotting intensity as the radial distance and horizontal angle as
-   * the angular position.  Uses plan-view (top-down) projection:
-   *   C0° = top, C90° = right, C180° = bottom, C270° = left.
-   */
+  // ── Legend: colour lines + C-plane labels, centred below chart ────────────
+
+  _drawLegend(cx, cy, R, data, planeIndices, s) {
+    const ctx    = this.ctx;
+    const idxArr = planeIndices ?? data.candela.map((_, i) => i);
+    const y      = cy + R + Math.round(14 * s);
+    const lineLen = Math.round(10 * s);
+    const gap     = Math.round(4 * s);
+    const itemGap = Math.round(14 * s);
+    const fs      = Math.max(6, Math.round(8 * s));
+
+    ctx.font         = `bold ${fs}px 'Public Sans', Arial, sans-serif`;
+    ctx.textBaseline = 'middle';
+
+    let totalW = 0;
+    idxArr.forEach((h, i) => {
+      if (i > 0) totalW += itemGap;
+      totalW += lineLen + gap + ctx.measureText(`C${data.horizAngles[h]}°`).width;
+    });
+
+    let x = cx - totalW / 2;
+    idxArr.forEach((h, colorIdx) => {
+      if (colorIdx > 0) x += itemGap;
+      const color = PLANE_COLORS[colorIdx % PLANE_COLORS.length];
+      const label = `C${data.horizAngles[h]}°`;
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 1.8;
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + lineLen, y);
+      ctx.stroke();
+
+      ctx.fillStyle = VISION_NAVY;
+      ctx.textAlign = 'left';
+      ctx.fillText(label, x + lineLen + gap, y);
+      x += lineLen + gap + ctx.measureText(label).width;
+    });
+  }
+
+  // ── Stats panel: vertical divider + three labelled stats ──────────────────
+
+  _drawStatsPanel(panelX, W, H, data, s) {
+    const ctx  = this.ctx;
+    const topY = Math.round(20 * s);
+    const botY = Math.round(240 * s);
+    const padX = Math.round(14 * s);
+
+    ctx.strokeStyle = VISION_NAVY;
+    ctx.globalAlpha = 0.18;
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX, topY);
+    ctx.lineTo(panelX, botY);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    const stats = [
+      { label: 'TOTAL LUMENS',   value: Math.round(data.totalLumens).toLocaleString(), unit: 'lm' },
+      { label: 'PEAK INTENSITY', value: Math.round(data.peakCandela).toLocaleString(), unit: 'cd' },
+      { label: 'BEAM ANGLE',     value: data.beamAngle.toFixed(0),                     unit: '°'  },
+    ];
+
+    const sectionH = (botY - topY) / 3;
+
+    stats.forEach((stat, i) => {
+      const y0 = topY + i * sectionH;
+
+      if (i > 0) {
+        ctx.strokeStyle = VISION_NAVY;
+        ctx.globalAlpha = 0.16;
+        ctx.lineWidth   = 0.6;
+        ctx.beginPath();
+        ctx.moveTo(panelX + padX, y0);
+        ctx.lineTo(W - padX, y0);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.fillStyle    = VISION_NAVY;
+      ctx.globalAlpha  = 0.55;
+      ctx.font         = `bold ${Math.max(7, Math.round(9 * s))}px 'Public Sans', Arial, sans-serif`;
+      ctx.textAlign    = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(stat.label, panelX + padX, y0 + sectionH * 0.165);
+      ctx.globalAlpha  = 1;
+
+      const valFs = Math.max(14, Math.round(22 * s));
+      ctx.fillStyle    = VISION_NAVY;
+      ctx.font         = `bold ${valFs}px Arial, sans-serif`;
+      ctx.textBaseline = 'alphabetic';
+      const valY = y0 + sectionH * 0.72;
+      ctx.fillText(stat.value, panelX + padX, valY);
+
+      const valW = ctx.measureText(stat.value).width;
+      ctx.globalAlpha = 0.65;
+      ctx.font        = `${Math.max(9, Math.round(11 * s))}px 'Public Sans', Arial, sans-serif`;
+      ctx.fillText(stat.unit, panelX + padX + valW + 4, valY);
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  // ── Shared helpers ─────────────────────────────────────────────────────────
+
   _buildConePoints(data, gamma, maxCd, R, cx, cy) {
-    const step = 2; // degrees
+    const step = 2;
     const pts  = [];
     for (let phi = 0; phi < 360; phi += step) {
       const cd     = this._intensityAt(data, phi, gamma);
@@ -290,37 +322,24 @@ class PolarChart {
     return pts;
   }
 
-  /**
-   * Interpolate intensity I(φ, γ) from IES data, handling symmetry.
-   * φ = horizontal (C-plane) angle, γ = vertical angle.
-   */
   _intensityAt(data, phi, gamma) {
     const { horizAngles, vertAngles, candela, numHorizAngles } = data;
+    if (numHorizAngles === 1) return IESParser._interpCandela(vertAngles, candela[0], gamma);
 
-    if (numHorizAngles === 1) {
-      return IESParser._interpCandela(vertAngles, candela[0], gamma);
-    }
-
-    // Normalise φ into 0–360
     phi = ((phi % 360) + 360) % 360;
-
-    // Map φ into the range covered by the file's C-planes
     const maxH = horizAngles[horizAngles.length - 1];
-    let lp; // lookup phi
+    let lp;
     if (maxH <= 90) {
-      // Quadrant symmetric: I(φ) = I(180−φ) = I(180+φ) = I(360−φ)
       if      (phi <= 90)  lp = phi;
       else if (phi <= 180) lp = 180 - phi;
       else if (phi <= 270) lp = phi - 180;
       else                 lp = 360 - phi;
     } else if (maxH <= 180) {
-      // Bilateral symmetric: I(φ) = I(360−φ)
       lp = phi <= 180 ? phi : 360 - phi;
     } else {
       lp = phi;
     }
 
-    // Interpolate between the two bracketing horizontal planes
     for (let h = 0; h < horizAngles.length - 1; h++) {
       if (horizAngles[h] <= lp && lp <= horizAngles[h + 1]) {
         const t   = (lp - horizAngles[h]) / (horizAngles[h + 1] - horizAngles[h]);
@@ -333,7 +352,6 @@ class PolarChart {
     return IESParser._interpCandela(vertAngles, candela[candela.length - 1], gamma);
   }
 
-  /** Build canvas points in DECREASING angle order (maxAngle → 0°). */
   _buildPts(vertAngles, candelas, maxCd, R, cx, cy, sign) {
     const pts = [];
     for (let i = vertAngles.length - 1; i >= 0; i--) {
@@ -350,103 +368,58 @@ class PolarChart {
     ctx.moveTo(cx, cy);
     pts.forEach(([x, y]) => ctx.lineTo(x, y));
     ctx.strokeStyle = color;
-    ctx.lineWidth   = 2.5;
+    ctx.lineWidth   = 2.25;
     ctx.lineJoin    = 'round';
     ctx.lineCap     = 'round';
     ctx.stroke();
   }
 
-  // ── Divider line ──────────────────────────────────────────────────────────
-
-  _drawDivider(x0, x1, y) {
-    const ctx = this.ctx;
-    ctx.strokeStyle = VISION_NAVY;
-    ctx.globalAlpha = 0.25;
-    ctx.lineWidth   = 0.6;
-    ctx.beginPath();
-    ctx.moveTo(x0, y);
-    ctx.lineTo(x1, y);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  // ── Info strip ────────────────────────────────────────────────────────────
-
-  _drawInfoStrip(x0, x1, y, data) {
-    const ctx  = this.ctx;
-    const midX = (x0 + x1) / 2;
-    const kw   = data.keywords;
-
-    const product = (kw.LUMCAT || data.filename.replace(/\.ies$/i, '')).substring(0, 26);
-    const lumens  = Math.round(data.totalLumens).toLocaleString() + ' lm';
-    const peakCd  = Math.round(data.peakCandela).toLocaleString()  + ' cd';
-    const beam    = data.beamAngle.toFixed(0) + '°';
-
-    const drawPair = (lx, ly, label, value) => {
-      ctx.textAlign    = 'left';
-      ctx.textBaseline = 'top';
-      ctx.font         = '10px Arial, sans-serif';
-      ctx.fillStyle    = VISION_NAVY;
-      ctx.globalAlpha  = 0.65;
-      ctx.fillText(label, lx, ly);
-      ctx.globalAlpha  = 1;
-      ctx.font         = 'bold 10.5px Arial, sans-serif';
-      ctx.fillText(value, lx + ctx.measureText(label).width + 5, ly);
-    };
-
-    drawPair(x0 + 4,    y,      'Product',        product);
-    drawPair(x0 + 4,    y + 17, 'Total lumens',   lumens);
-    drawPair(midX + 4,  y,      'Peak intensity',  peakCd);
-    drawPair(midX + 4,  y + 17, 'Beam angle',      beam);
-  }
-
   // ── SVG export ────────────────────────────────────────────────────────────
 
   exportSVG(data, opts = {}) {
-    const W = 420, H = 380;
-    const TITLE_H = 52, INFO_H = 50, SIDE_PAD = 36;
-    const chartH  = H - TITLE_H - INFO_H;
-    const R       = Math.min((W - 2 * SIDE_PAD) / 2, chartH / 2) * 0.92;
-    const cx      = W / 2;
-    const cy      = TITLE_H + chartH / 2;
-    const r2      = n => Math.round(n * 100) / 100;
-    const els     = [];
+    const W = 420, H = 260;
+    const PANEL_X = 252;
+    const cx = 120, cy = 122, R = 98;
+    const r2 = n => Math.round(n * 100) / 100;
+    const els = [];
 
-    const svgLine = (x1, y1, x2, y2, stroke, sw, op, dash = '') =>
-      `<line x1="${r2(x1)}" y1="${r2(y1)}" x2="${r2(x2)}" y2="${r2(y2)}" stroke="${stroke}" stroke-width="${sw}" stroke-opacity="${op}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+    const svgLine = (x1, y1, x2, y2, stroke, sw, op) =>
+      `<line x1="${r2(x1)}" y1="${r2(y1)}" x2="${r2(x2)}" y2="${r2(y2)}" stroke="${stroke}" stroke-width="${sw}" stroke-opacity="${op}"/>`;
 
-    // Background
-    els.push(`<rect width="${W}" height="${H}" fill="${VISION_SAND}"/>`);
-
-    // Title
-    els.push(`<text x="${cx}" y="23" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" font-weight="bold" fill="${VISION_NAVY}">Polar Intensity Distribution</text>`);
-    const kw  = data.keywords;
-    const sub = [data.filename.replace(/\.ies$/i, ''), kw.LUMINAIRE, kw.LAMP].filter(Boolean).slice(0, 2).join(' · ');
-    els.push(`<text x="${cx}" y="40" text-anchor="middle" font-family="Arial,sans-serif" font-size="9.5" fill="${VISION_NAVY}" opacity="0.7">${escSVG(sub)}</text>`);
-    els.push(svgLine(36, 44, W - 36, 44, VISION_NAVY, 0.6, 0.25));
+    // Background + panel divider
+    els.push(`<rect width="${W}" height="${H}" fill="#ffffff"/>`);
+    els.push(svgLine(PANEL_X, 20, PANEL_X, 240, VISION_NAVY, 1, 0.18));
 
     // Grid rings
     [0.25, 0.5, 0.75, 1.0].forEach(ratio => {
-      els.push(`<circle cx="${r2(cx)}" cy="${r2(cy)}" r="${r2(R * ratio)}" fill="none" stroke="${VISION_NAVY}" stroke-width="0.6" stroke-opacity="0.6"/>`);
+      const sw = ratio === 1.0 ? 0.9 : 0.6;
+      const op = ratio === 1.0 ? 0.4 : 0.18;
+      els.push(`<circle cx="${cx}" cy="${cy}" r="${r2(R * ratio)}" fill="none" stroke="${VISION_NAVY}" stroke-width="${sw}" stroke-opacity="${op}"/>`);
     });
 
-    // Radial lines every 10°
-    for (let deg = 0; deg <= 90; deg += 10) {
-      const rad = deg * Math.PI / 180;
-      const sx  = Math.sin(rad) * R;
-      const sy  = Math.cos(rad) * R;
-      const op  = (deg === 0 || deg === 90) ? 0.45 : 0.30;
-      els.push(svgLine(cx + sx, cy + sy, cx - sx, cy - sy, VISION_NAVY, 0.5, op));
-      if (deg > 0 && deg < 90) els.push(svgLine(cx - sx, cy + sy, cx + sx, cy - sy, VISION_NAVY, 0.5, op));
+    // Radial lines every 15°
+    for (let deg = 0; deg <= 90; deg += 15) {
+      const rad  = deg * Math.PI / 180;
+      const sx   = Math.sin(rad) * R;
+      const sy   = Math.cos(rad) * R;
+      const isAx = (deg === 0 || deg === 90);
+      els.push(svgLine(cx + sx, cy + sy, cx - sx, cy - sy, VISION_NAVY, isAx ? 0.7 : 0.5, isAx ? 0.35 : 0.13));
+      if (deg > 0 && deg < 90) els.push(svgLine(cx - sx, cy + sy, cx + sx, cy - sy, VISION_NAVY, 0.5, 0.13));
     }
 
-    // Cd labels
+    // Angle labels
+    const aLbl = `font-family="'Public Sans', Arial, sans-serif" font-size="8.5" font-weight="700" fill="${VISION_NAVY}" opacity="0.55" letter-spacing="0.6"`;
+    els.push(`<text x="${cx + R + 7}" y="${cy}" text-anchor="start" ${aLbl} dominant-baseline="middle">90°</text>`);
+    els.push(`<text x="${cx - R - 7}" y="${cy}" text-anchor="end" ${aLbl} dominant-baseline="middle">90°</text>`);
+    els.push(`<text x="${cx}" y="${cy - R - 6}" text-anchor="middle" ${aLbl}>180°</text>`);
+
+    // Cd labels (white knockout rect)
     [0.25, 0.5, 0.75, 1.0].forEach(ratio => {
       const y   = cy - R * ratio;
       const val = Math.round(data.peakCandela * ratio).toLocaleString();
-      const tw  = val.length * 5.5 + 6;
-      els.push(`<rect x="${r2(cx + 2)}" y="${r2(y - 7)}" width="${r2(tw)}" height="13" fill="${VISION_SAND}"/>`);
-      els.push(`<text x="${r2(cx + 4)}" y="${r2(y + 1)}" font-family="Arial,sans-serif" font-size="9" fill="${VISION_NAVY}" opacity="0.6" dominant-baseline="middle">${escSVG(val)}</text>`);
+      const tw  = val.length * 5.5 + 12;
+      els.push(`<rect x="${r2(cx + 4)}" y="${r2(y - 7)}" width="${r2(tw)}" height="14" rx="2" fill="#ffffff"/>`);
+      els.push(`<text x="${r2(cx + 7)}" y="${r2(y)}" font-family="'Public Sans', Arial, sans-serif" font-size="9.5" font-weight="700" fill="${VISION_NAVY}" opacity="0.55" letter-spacing="0.3" dominant-baseline="middle">${escSVG(val)}</text>`);
     });
 
     // Curves
@@ -463,18 +436,15 @@ class PolarChart {
       const leftInc  = [...leftPts].reverse();
       const ptStr    = pts => pts.map(([x, y]) => `${r2(x)},${r2(y)}`).join(' ');
 
-      // Fill
       const allPts = [[cx, cy], ...rightPts, ...leftInc.slice(1)];
-      els.push(`<polygon points="${allPts.map(([x, y]) => `${r2(x)},${r2(y)}`).join(' ')}" fill="${color}" fill-opacity="0.10"/>`);
-      // Lines
-      els.push(`<polyline points="${r2(cx)},${r2(cy)} ${ptStr(rightPts)}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`);
-      els.push(`<polyline points="${r2(cx)},${r2(cy)} ${ptStr(leftPts)}"  fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`);
-      // Nadir dot
+      els.push(`<polygon points="${allPts.map(([x, y]) => `${r2(x)},${r2(y)}`).join(' ')}" fill="${color}" fill-opacity="0.09"/>`);
+      els.push(`<polyline points="${r2(cx)},${r2(cy)} ${ptStr(rightPts)}" fill="none" stroke="${color}" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>`);
+      els.push(`<polyline points="${r2(cx)},${r2(cy)} ${ptStr(leftPts)}"  fill="none" stroke="${color}" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>`);
       const [nx, ny] = rightPts[rightPts.length - 1];
-      els.push(`<circle cx="${r2(nx)}" cy="${r2(ny)}" r="4" fill="${VISION_SAND}" stroke="${color}" stroke-width="2"/>`);
+      els.push(`<circle cx="${r2(nx)}" cy="${r2(ny)}" r="3.5" fill="#ffffff" stroke="${color}" stroke-width="1.75"/>`);
     });
 
-    // Cone curves
+    // Cone curves (maxmax mode)
     if (opts.coneAngles && opts.coneAngles.length) {
       opts.coneAngles.forEach((gamma, i) => {
         const pts = this._buildConePoints(data, gamma, data.peakCandela, R, cx, cy);
@@ -484,22 +454,36 @@ class PolarChart {
       });
     }
 
-    // Bottom divider
-    els.push(svgLine(SIDE_PAD, H - INFO_H, W - SIDE_PAD, H - INFO_H, VISION_NAVY, 0.6, 0.25));
+    // Legend centred below polar chart
+    const legendY  = cy + R + 12;
+    const charW    = 5.2;
+    const items    = idxArr.map((h, colorIdx) => ({
+      color: PLANE_COLORS[colorIdx % PLANE_COLORS.length],
+      label: `C${data.horizAngles[h]}°`,
+    }));
+    const totalLW  = items.reduce((s, item, i) => s + (i > 0 ? 14 : 0) + 10 + 4 + item.label.length * charW, 0);
+    let lx = cx - totalLW / 2;
+    items.forEach((item, i) => {
+      if (i > 0) lx += 14;
+      els.push(`<line x1="${r2(lx)}" y1="${legendY}" x2="${r2(lx + 10)}" y2="${legendY}" stroke="${item.color}" stroke-width="1.8" stroke-linecap="round"/>`);
+      els.push(`<text x="${r2(lx + 14)}" y="${legendY + 3}" font-family="'Public Sans', Arial, sans-serif" font-size="8" font-weight="700" fill="${VISION_NAVY}" letter-spacing="0.3">${escSVG(item.label)}</text>`);
+      lx += 10 + 4 + item.label.length * charW;
+    });
 
-    // Info strip
-    const product = (kw.LUMCAT || data.filename.replace(/\.ies$/i, '')).substring(0, 26);
-    const iy      = H - INFO_H + 7;
-    const midX    = W / 2;
-    const infoPair = (lx, ly, label, value) => {
-      const lw = label.length * 5.8;
-      return `<text x="${r2(lx)}" y="${r2(ly + 9)}" font-family="Arial,sans-serif" font-size="10" fill="${VISION_NAVY}" opacity="0.65">${escSVG(label)}</text>` +
-             `<text x="${r2(lx + lw + 5)}" y="${r2(ly + 9)}" font-family="Arial,sans-serif" font-size="10.5" font-weight="bold" fill="${VISION_NAVY}">${escSVG(value)}</text>`;
-    };
-    els.push(infoPair(SIDE_PAD + 4, iy,      'Product',        (kw.LUMCAT || data.filename.replace(/\.ies$/i, '')).substring(0, 26)));
-    els.push(infoPair(SIDE_PAD + 4, iy + 17, 'Total lumens',   Math.round(data.totalLumens).toLocaleString() + ' lm'));
-    els.push(infoPair(midX + 4,     iy,      'Peak intensity',  Math.round(data.peakCandela).toLocaleString() + ' cd'));
-    els.push(infoPair(midX + 4,     iy + 17, 'Beam angle',      data.beamAngle.toFixed(0) + '°'));
+    // Stats panel
+    const labelX = PANEL_X + 14;
+    const lFont  = `font-family="'Public Sans', Arial, sans-serif" font-size="9" font-weight="700" fill="${VISION_NAVY}" opacity="0.55" letter-spacing="1.4"`;
+    const stats  = [
+      { label: 'TOTAL LUMENS',   value: Math.round(data.totalLumens).toLocaleString(), unit: 'lm',  labelY: 32,     valueY: 62,     divY: 92.67  },
+      { label: 'PEAK INTENSITY', value: Math.round(data.peakCandela).toLocaleString(), unit: 'cd',  labelY: 106.67, valueY: 136.67, divY: 167.33 },
+      { label: 'BEAM ANGLE',     value: data.beamAngle.toFixed(0),                     unit: '°',   labelY: 181.33, valueY: 211.33, divY: null   },
+    ];
+
+    stats.forEach(stat => {
+      if (stat.divY) els.push(svgLine(labelX, stat.divY, W - 14, stat.divY, VISION_NAVY, 0.6, 0.16));
+      els.push(`<text x="${labelX}" y="${stat.labelY}" ${lFont}>${escSVG(stat.label)}</text>`);
+      els.push(`<text x="${labelX}" y="${stat.valueY}" font-family="'Neulis Neue', 'Public Sans', Arial, sans-serif" font-size="22" font-weight="700" fill="${VISION_NAVY}" letter-spacing="-0.3">${escSVG(stat.value)}<tspan dx="5" font-size="11" font-weight="400" fill-opacity="0.65" letter-spacing="0">${escSVG(stat.unit)}</tspan></text>`);
+    });
 
     return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n${els.join('\n')}\n</svg>`;
   }
